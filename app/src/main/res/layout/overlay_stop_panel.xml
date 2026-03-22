@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="8dp"
+    android:background="#CC000000">
+
+    <TextView
+        android:id="@+id/overlayTimer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="00:00"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:textSize="16sp"
+        android:paddingEnd="10dp" />
+
+    <TextView
+        android:id="@+id/overlayStop"
+        android:layout_width="64dp"
+        android:layout_height="40dp"
+        android:background="@drawable/overlay_stop_bg"
+        android:gravity="center"
+        android:text="STOP"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:textSize="16sp" />
+
+</LinearLayout>
+

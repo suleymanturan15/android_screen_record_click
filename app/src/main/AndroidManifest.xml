@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Runtime (Android 13+): POST_NOTIFICATIONS -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Boot recovery -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Exact alarms (Android 12+) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <!-- Foreground service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!-- Optional: overlay (SYSTEM_ALERT_WINDOW is granted via Settings UI) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- Optional: request ignore battery optimizations via Settings UI -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <application
+        android:name=".App"
+        android:allowBackup="true"
+        android:icon="@android:drawable/sym_def_app_icon"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.TimeMacroScheduler">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.TimeMacroScheduler">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Accessibility service: macro playback + (optional) action capture -->
+        <service
+            android:name=".service.accessibility.MacroAccessibilityService"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/macro_accessibility_service" />
+        </service>
+
+        <!-- MediaProjection recorder foreground service -->
+        <service
+            android:name=".service.recording.ScreenRecorderService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <!-- Overlay stop bubble (recording control) -->
+        <service
+            android:name=".service.overlay.OverlayStopService"
+            android:exported="false" />
+
+        <!-- Overlay playback control (manual test) -->
+        <!-- Scheduler foreground service (orchestrator) -->
+        <service
+            android:name=".service.scheduler.SchedulerForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Keep-alive foreground service (MIUI resilience) -->
+        <service
+            android:name=".service.keepalive.KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Alarm trigger receiver -->
+        <receiver
+            android:name=".receiver.AlarmReceiver"
+            android:exported="false" />
+
+        <!-- Reboot recovery -->
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>
+
