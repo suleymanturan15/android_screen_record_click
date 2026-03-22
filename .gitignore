@@ -8,5 +8,6 @@ captures/
 *.apk
 *.aab
 *.ap_
+*.idsig
 *.keystore
 *.jks
