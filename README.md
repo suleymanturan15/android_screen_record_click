@@ -6,6 +6,18 @@ Bu repo artık **Macro record** (Accessibility event capture) + **Playback** (Ac
 
 Detaylar için `docs/ANDROID_ARCHITECTURE.md` dosyasına bakın.
 
+### İndir & Kur (telefon)
+
+Son sürüm debug APK: [`artifacts/timemacro-fix-tap-scheduler-debug.apk`](artifacts/timemacro-fix-tap-scheduler-debug.apk)
+
+Kurulum:
+1. Telefonda Settings → Security → "Install unknown apps" → tarayıcına izin ver.
+2. APK'yı GitHub'dan indir (yukarıdaki link → "Download raw file") ve aç.
+3. Açıldıktan sonra in-app onboarding'i takip et:
+   - POST_NOTIFICATIONS izni (Android 13+) — runtime istenir.
+   - Settings → Accessibility → "TimeMacro Scheduler" → enable.
+   - (Önerilen) Ignore battery optimizations.
+
 ### Build / Run
 
 Komut satırı:

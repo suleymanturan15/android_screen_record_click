@@ -40,10 +40,11 @@ class AccessibilityMacroRunner(
 
     override suspend fun runMacro(macroId: String, runContext: RunContext) {
         runMutex.withLock {
-        // Real handshake: wait for a live service instance.
+        // B4 fix: handshake budget 2 sn → 6 sn. Right after a wake-from-Doze the bound service
+        // may take longer than 2 sn to flip its StateFlow to true, which used to fail tasks.
         val connected =
             runCatching {
-                withTimeout(2_000) { AccessibilityConnection.isConnected.first { it } }
+                withTimeout(6_000) { AccessibilityConnection.isConnected.first { it } }
             }.getOrNull() == true
         if (!connected || !AccessibilityConnection.isRuntimeConnectedNow()) {
             error("Accessibility runtime disconnected")
@@ -85,8 +86,8 @@ class AccessibilityMacroRunner(
             )
         if (!ok) error("Could not enqueue playback request")
 
-        // Strict handshake: service must acknowledge quickly, otherwise it's not responding.
-        withTimeout(3_000) { started.await() }
+        // B4 fix: service-ack handshake 3 sn → 6 sn (same reason as the connection probe above).
+        withTimeout(6_000) { started.await() }
 
         Log.d(TAG, "await result runId=$runId macroId=$macroId recordedMs=$recordedMs speedPct=$speedPercent timeoutMs=$timeoutMs")
 

@@ -17,6 +17,8 @@ import com.timemacro.scheduler.domain.scheduler.NextRunResult
 import com.timemacro.scheduler.domain.scheduler.SchedulerEngine
 import com.timemacro.scheduler.domain.scheduler.TaskPlanner
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.util.UUID
@@ -33,10 +35,17 @@ class AndroidSchedulerEngine(
     private val alarmManager: AlarmManager =
         context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
+    // B5 fix: serialize schedule/cancel operations across callers.
+    // Previously HealthCheckWorker.doWork() and SchedulerForegroundService.onTaskComplete()
+    // could both call schedule(task) concurrently → two PendingIntents racing on the same
+    // request code, plus inconsistent nextScheduledAt writes.
+    private val scheduleMutex = Mutex()
+
     override suspend fun schedule(task: Task) {
+        scheduleMutex.withLock {
         withContext(Dispatchers.IO) {
             if (!task.active) {
-                cancel(task.id)
+                cancelLocked(task.id)
                 return@withContext
             }
 
@@ -46,7 +55,7 @@ class AndroidSchedulerEngine(
             val endsAt = task.planEndsAt
             if (endsAt != null && Instant.ofEpochMilli(now).isAfter(endsAt)) {
                 taskRepository.upsert(task.copy(active = false))
-                cancel(task.id)
+                cancelLocked(task.id)
                 writeLog(
                     taskId = task.id,
                     source = "SCHEDULER",
@@ -89,7 +98,7 @@ class AndroidSchedulerEngine(
 
             val macro = macroRepository.getById(task.macroId)
             if (macro == null) {
-                cancel(task.id)
+                cancelLocked(task.id)
                 writeLog(
                     taskId = task.id,
                     source = "SCHEDULER",
@@ -123,7 +132,7 @@ class AndroidSchedulerEngine(
             if (nextAt == null) {
                 if (next.reason == "expired") {
                     taskRepository.upsert(task.copy(active = false))
-                    cancel(task.id)
+                    cancelLocked(task.id)
                     writeLog(
                         taskId = task.id,
                         source = "SCHEDULER",
@@ -141,7 +150,7 @@ class AndroidSchedulerEngine(
                         message = "Expired taskId=${task.id}",
                     )
                 } else {
-                    cancel(task.id)
+                    cancelLocked(task.id)
                 }
                 return@withContext
             }
@@ -154,9 +163,18 @@ class AndroidSchedulerEngine(
                 lastRunAtEpochMs = task.lastRunAt?.toEpochMilli(),
             )
         }
+        }
     }
 
     override suspend fun cancel(taskId: String) {
+        scheduleMutex.withLock { cancelLocked(taskId) }
+    }
+
+    /**
+     * Internal cancel that does NOT take the mutex. Used from inside schedule() (which already
+     * holds the lock) to avoid self-deadlock — kotlinx.coroutines Mutex is not reentrant.
+     */
+    private suspend fun cancelLocked(taskId: String) {
         withContext(Dispatchers.IO) {
             val pi = alarmPendingIntent(taskId, create = false)
             if (pi != null) {

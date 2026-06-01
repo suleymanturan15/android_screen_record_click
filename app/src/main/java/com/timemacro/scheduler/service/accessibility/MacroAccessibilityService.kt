@@ -141,11 +141,9 @@ class MacroAccessibilityService : AccessibilityService() {
             MacroSessionManager.updateLastEventDebug("type=${event.eventType} pkg=${event.packageName}")
 
             when (event.eventType) {
-                AccessibilityEvent.TYPE_VIEW_CLICKED,
-                AccessibilityEvent.TYPE_VIEW_FOCUSED,
-                AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED,
-                AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
-                -> captureTap(event)
+                // A2 fix: Only capture CLICKED. FOCUSED/TEXT_* fire spuriously on the same user tap
+                // and used to produce 2–4 duplicate Tap actions per gesture.
+                AccessibilityEvent.TYPE_VIEW_CLICKED -> captureTap(event)
 
                 AccessibilityEvent.TYPE_VIEW_SCROLLED -> captureScroll(event)
 
@@ -433,9 +431,11 @@ class MacroAccessibilityService : AccessibilityService() {
             val nxOverride = if (dw > 0) (x.toFloat() / dw.toFloat()) else null
             val nyOverride = if (dh > 0) (y.toFloat() / dh.toFloat()) else null
 
-            // Debounce duplicate tap-like events (some apps fire both FOCUSED + CLICKED).
+            // Debounce: even though we only listen to TYPE_VIEW_CLICKED now (A2 fix), some apps
+            // fire two CLICK events back-to-back on the same node (e.g., RecyclerView item + parent).
+            // Widened window to 350ms to absorb that race. Coord tolerance kept tight.
             val now = event.eventTime
-            if (now - lastTapAtMs in 0..80L && abs(x - lastTapX) <= 12 && abs(y - lastTapY) <= 12) {
+            if (now - lastTapAtMs in 0..350L && abs(x - lastTapX) <= 16 && abs(y - lastTapY) <= 16) {
                 Log.d(TAG_RECORD, "debounce tap x=$x y=$y dt=${now - lastTapAtMs}ms type=${event.eventType}")
                 return
             }
@@ -763,9 +763,10 @@ class MacroAccessibilityService : AccessibilityService() {
             }
         val ax = (x + oxPx + jx).coerceIn(0, curW - 1)
         val ay = (y + oyPx + jy).coerceIn(0, curH - 1)
+        // A4 fix: tap dot is a visual debug-only highlight. Fire-and-forget on main thread, NO delay.
+        // The 250ms pre-gesture delay used to accumulate (e.g. 10 taps → +2.5s playback drift).
         if (showTapDotDuringPlayback) {
             showTapDot(ax, ay, durationMs = 250)
-            delay(250)
         }
         val path = Path().apply {
             moveTo(ax.toFloat(), ay.toFloat())
@@ -833,9 +834,9 @@ class MacroAccessibilityService : AccessibilityService() {
             val y = rect.centerY().coerceIn(0, curH - 1)
             Log.d(TAG_PLAYBACK, "TAP selector viewId=${selector.viewId} text=${selector.text} cls=${selector.cls} expected=${expected.first},${expected.second}")
 
+            // A4 fix: visual-only dot, no blocking delay before the node click.
             if (showTapDotDuringPlayback) {
                 showTapDot(x, y, durationMs = 250)
-                delay(250)
             }
 
             val clicked = clickNodeOrParent(node)
@@ -932,12 +933,70 @@ class MacroAccessibilityService : AccessibilityService() {
         return try {
             val best = BestNodeMatch()
             traverseForBestNode(root, selector.viewId, selector.text, selector.cls, expectedX, expectedY, best)
+            // A3 fix: if id/text-based match failed, fall back to the nearest CLICKABLE node
+            // whose bounds contain (or are close to) the expected point. This handles apps that
+            // expose anonymous views (no view-id, no text) — previously these always fell back
+            // to raw recorded center-coords, which were wrong because the recorded coord was
+            // the bbox center, not the actual touched pixel.
+            if (best.node == null) {
+                val clickableBest = BestNodeMatch()
+                traverseForNearestClickable(root, expectedX, expectedY, clickableBest)
+                if (clickableBest.node != null) {
+                    Log.d(
+                        TAG_PLAYBACK,
+                        "selector fallback -> nearest clickable expected=$expectedX,$expectedY",
+                    )
+                    return clickableBest.node
+                }
+            }
             best.node
         } catch (t: Throwable) {
             Log.e(TAG_PLAYBACK, "findBestNodeForSelector failed", t)
             null
         } finally {
             runCatching { root.recycle() }
+        }
+    }
+
+    /**
+     * A3 fix helper: scan the tree for clickable nodes whose bounds contain expected (x,y).
+     * If none contain the point, pick the clickable with the smallest center-distance.
+     */
+    private fun traverseForNearestClickable(
+        node: AccessibilityNodeInfo,
+        expectedX: Int,
+        expectedY: Int,
+        best: BestNodeMatch,
+    ) {
+        val clickable = runCatching { node.isClickable }.getOrNull() == true
+        if (clickable) {
+            val r = Rect()
+            node.getBoundsInScreen(r)
+            if (!r.isEmpty) {
+                val contains = r.contains(expectedX, expectedY)
+                val cx = r.centerX()
+                val cy = r.centerY()
+                val dx = (cx - expectedX).toLong()
+                val dy = (cy - expectedY).toLong()
+                val dist2 = dx * dx + dy * dy
+                // Strongly prefer nodes that geometrically contain the expected point.
+                val containsBonus = if (contains) 0L else 5_000_000L
+                val score = containsBonus + dist2
+                if (score < best.bestScore) {
+                    best.bestScore = score
+                    best.node?.let { runCatching { it.recycle() } }
+                    best.node = AccessibilityNodeInfo.obtain(node)
+                }
+            }
+        }
+        val childCount = node.childCount
+        for (i in 0 until childCount) {
+            val child = node.getChild(i) ?: continue
+            try {
+                traverseForNearestClickable(child, expectedX, expectedY, best)
+            } finally {
+                runCatching { child.recycle() }
+            }
         }
     }
 

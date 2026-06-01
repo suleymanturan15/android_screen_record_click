@@ -88,7 +88,6 @@ class AndroidTaskRunner(
         }
 
         val enabledInSettings = runCatching { isAccessibilityEnabledForThisService(appContext) }.getOrDefault(false)
-        val runtimeConnected = AccessibilityConnection.isRuntimeConnectedNow()
         if (!enabledInSettings) {
             writeLog(
                 taskId = task.id,
@@ -100,6 +99,20 @@ class AndroidTaskRunner(
                 error = "Accessibility disabled (settings OFF)",
             )
             return TaskRunResult.Failure("Accessibility disabled (settings OFF)")
+        }
+        // B4 fix: don't fail immediately if the heartbeat is stale right after wake.
+        // Wait up to 6 sn for the service to post a fresh heartbeat. Previously a single 2 sn
+        // probe was used, which caused PERMISSION_ERROR on the first run after Doze.
+        var runtimeConnected = AccessibilityConnection.isRuntimeConnectedNow()
+        if (!runtimeConnected) {
+            val deadline = System.currentTimeMillis() + 6_000L
+            while (System.currentTimeMillis() < deadline) {
+                delay(250)
+                if (AccessibilityConnection.isRuntimeConnectedNow()) {
+                    runtimeConnected = true
+                    break
+                }
+            }
         }
         if (!runtimeConnected) {
             writeLog(

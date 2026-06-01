@@ -41,7 +41,11 @@ object AccessibilityConnection {
         _lastSeenUptimeMs.value = uptimeMs
     }
 
-    fun isRuntimeConnectedNow(maxHeartbeatAgeMs: Long = 2_000L): Boolean {
+    // B4 fix: heartbeat tolerance bumped from 2_000 → 8_000.
+    // After Doze/screen-off, the AccessibilityService's main-handler heartbeat can fall behind
+    // even though the service is still bound and ready. The 2 sn budget caused "PERMISSION_ERROR
+    // Accessibility runtime disconnected" log entries on every scheduled task.
+    fun isRuntimeConnectedNow(maxHeartbeatAgeMs: Long = 8_000L): Boolean {
         if (!_isConnected.value) return false
         if (serviceRef.get() == null) return false
         val last = _lastSeenUptimeMs.value ?: return false

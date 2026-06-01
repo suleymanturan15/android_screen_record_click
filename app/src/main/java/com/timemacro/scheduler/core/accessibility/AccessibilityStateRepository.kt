@@ -107,7 +107,9 @@ class AccessibilityStateRepository(
                 AccessibilityConnection.lastSeenUptimeMs,
             ) { enabled, connected, lastAt, lastSeenUptimeMs ->
                 val nowUptime = SystemClock.uptimeMillis()
-                val seenRecently = (lastSeenUptimeMs?.let { nowUptime - it } ?: Long.MAX_VALUE) <= 2_000L
+                // B4 fix consistency: same 8 sn budget as AccessibilityConnection.isRuntimeConnectedNow.
+                // The 2 sn threshold was the second source of "runtime disconnected" false-negatives.
+                val seenRecently = (lastSeenUptimeMs?.let { nowUptime - it } ?: Long.MAX_VALUE) <= 8_000L
                 val runtime = enabled && connected && seenRecently && AccessibilityConnection.serviceRef.get() != null
 
                 _runtimeConnected.value = runtime
@@ -131,7 +133,12 @@ class AccessibilityStateRepository(
                 )
             }.collect { snap ->
                 _snapshot.value = snap
-                // If we become connected, clear any reconnect loop state.
+                // Reconnect-window fix: any time a fresh heartbeat lifts runtime to "connected",
+                // immediately promote UI to CONNECTED_AND_ACTIVE — even if the 5 sn CONNECTING
+                // window already lapsed and left UI stuck at DISCONNECTED_BY_SYSTEM. This kills
+                // the "Disconnected by system (MIUI)" message that was disabling Start Recording
+                // after an APK reinstall caused onUnbind→onDestroy→onCreate→onServiceConnected
+                // churn.
                 if (snap.runtimeConnected) {
                     _runtimeUiState.value = AccessibilityRuntimeUiState.CONNECTED_AND_ACTIVE
                     reconnectJob?.cancel()
@@ -140,6 +147,10 @@ class AccessibilityStateRepository(
                     reconnectJob?.cancel()
                     reconnectJob = null
                     _runtimeUiState.value = AccessibilityRuntimeUiState.DISCONNECTED_BY_SYSTEM
+                } else if (_runtimeUiState.value == AccessibilityRuntimeUiState.DISCONNECTED_BY_SYSTEM) {
+                    // Enabled-in-settings but not yet "runtime connected" — re-arm the
+                    // reconnect window so heartbeats can flip us back to CONNECTED.
+                    startReconnectWindow()
                 }
             }
         }

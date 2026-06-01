@@ -1,10 +1,15 @@
 package com.timemacro.scheduler
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -21,6 +26,22 @@ import android.widget.Toast
 
 class MainActivity : ComponentActivity() {
     private val pendingOpenRoute = mutableStateOf<String?>(null)
+
+    // B1 fix: Android 13+ requires runtime POST_NOTIFICATIONS for FGS notifications.
+    // Without it, SchedulerForegroundService.startForeground() succeeds but no notification is
+    // shown — and on some OEMs the FGS is silently killed, so scheduled tasks never run.
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            Log.i("TimeMacro/Permission", "POST_NOTIFICATIONS granted=$granted")
+        }
+
+    private fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val state = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+        if (state != PackageManager.PERMISSION_GRANTED) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
@@ -40,6 +61,7 @@ class MainActivity : ComponentActivity() {
             if (msg.isNotBlank()) Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
         }
         container.accessibilityStateRepository.onAppForegrounded()
+        ensureNotificationPermission()
 
         lifecycleScope.launch {
             runCatching { container.userPreferences.onboardingSeen.first() }

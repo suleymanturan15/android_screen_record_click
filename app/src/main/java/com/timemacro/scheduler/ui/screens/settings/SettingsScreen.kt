@@ -76,12 +76,12 @@ fun SettingsScreen(
     var canScheduleExactAlarms by remember { mutableStateOf(true) }
 
     val volumeKeyStopEnabled by container.userPreferences.stopRecordingWithVolumeKeys.collectAsState(initial = true)
-    val showTapDotEnabled by container.userPreferences.showTapDotDuringPlayback.collectAsState(initial = true)
+    val showTapDotEnabled by container.userPreferences.showTapDotDuringPlayback.collectAsState(initial = false)
     val playbackSpeedPercent by container.userPreferences.playbackSpeedPercent.collectAsState(initial = 100)
     val tapOffsetXDp by container.userPreferences.tapOffsetXDp.collectAsState(initial = 0)
     val tapOffsetYDp by container.userPreferences.tapOffsetYDp.collectAsState(initial = 0)
     val tapJitterDp by container.userPreferences.tapJitterDp.collectAsState(initial = 0)
-    val taskLaunchTargetApp by container.userPreferences.taskLaunchTargetApp.collectAsState(initial = true)
+    val taskLaunchTargetApp by container.userPreferences.taskLaunchTargetApp.collectAsState(initial = false)
     val taskLaunchDelayMs by container.userPreferences.taskLaunchDelayMs.collectAsState(initial = 1500)
 
     var tapOffsetXText by remember { mutableStateOf(tapOffsetXDp.toString()) }

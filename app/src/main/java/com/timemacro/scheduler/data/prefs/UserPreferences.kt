@@ -47,7 +47,7 @@ class UserPreferences(
     val showTapDotDuringPlayback: Flow<Boolean> =
         context.dataStore.data
             .catch { emit(emptyPreferences()) }
-            .map { prefs -> prefs[Keys.ShowTapDotDuringPlayback] ?: true }
+            .map { prefs -> prefs[Keys.ShowTapDotDuringPlayback] ?: false }
 
     val postScrollSettleMs: Flow<Int> =
         context.dataStore.data
@@ -96,7 +96,7 @@ class UserPreferences(
     val taskLaunchTargetApp: Flow<Boolean> =
         context.dataStore.data
             .catch { emit(emptyPreferences()) }
-            .map { prefs -> prefs[Keys.TaskLaunchTargetApp] ?: true }
+            .map { prefs -> prefs[Keys.TaskLaunchTargetApp] ?: false }
 
     val taskLaunchDelayMs: Flow<Int> =
         context.dataStore.data
