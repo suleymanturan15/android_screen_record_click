@@ -13,8 +13,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,10 +26,15 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -145,34 +154,90 @@ fun SettingsScreen(
     ) {
         Text("Settings / Permissions", style = MaterialTheme.typography.headlineSmall)
 
-        ChecklistRow("Accessibility enabled (Settings)", accessibilityEnabledInSettings)
-        ChecklistRow(
-            "Accessibility connected (runtime)",
-            runtimeConnected,
-            customRightText =
-                when {
-                    !accessibilityEnabledInSettings -> "Missing"
-                    runtimeConnected -> "OK"
-                    runtimeUiState == AccessibilityRuntimeUiState.CONNECTING -> "Connecting…"
-                    else -> "Disconnected by system"
-                },
-        )
+        // ─────────────────────────────────────────────────────────────────────
+        // Permission status panel — green ✓ when OK, red ✕ when missing.
+        // Each row is tappable and deep-links to the matching settings page.
+        // User cannot be auto-granted these (Android security model); we only
+        // route them to the right setting screen.
+        // ─────────────────────────────────────────────────────────────────────
+        PermissionStatusCard(title = "Required permissions") {
+            PermissionRow(
+                label = "Accessibility açık",
+                isOk = accessibilityEnabledInSettings,
+                onClick = { openAccessibilitySettings(context) },
+            )
+            PermissionRow(
+                label = "Accessibility runtime bağlı",
+                isOk = runtimeConnected,
+                badgeOverride =
+                    when {
+                        !accessibilityEnabledInSettings -> "Önce 'Accessibility açık'"
+                        runtimeConnected -> null
+                        runtimeUiState == AccessibilityRuntimeUiState.CONNECTING -> "Bağlanıyor…"
+                        else -> "Sistem kapattı"
+                    },
+                onClick = { openAccessibilitySettings(context) },
+            )
+            PermissionRow(
+                label = "Bildirim izni (Android 13+)",
+                isOk = notificationsEnabled,
+                onClick = { openAppNotificationSettings(context) },
+            )
+            PermissionRow(
+                label = "Exact alarms (Android 12+)",
+                isOk = canScheduleExactAlarms,
+                onClick = { openExactAlarmSettings(context) },
+            )
+            PermissionRow(
+                label = "Pil optimizasyonu kapalı",
+                isOk = ignoringBatteryOptimizations,
+                onClick = { requestIgnoreBatteryOptimizations(context) },
+            )
+            PermissionRow(
+                label = "Overlay (opsiyonel)",
+                isOk = canDrawOverlays,
+                onClick = { openOverlaySettings(context) },
+            )
+        }
+
+        // MIUI/HyperOS sorun giderme bölümü — Xiaomi ailesi cihazlarda göster.
+        if (snap.isMiui || snap.isXiaomiFamily) {
+            PermissionStatusCard(title = "MIUI / HyperOS sorun giderme") {
+                Text(
+                    text =
+                        "Aşağıdaki ayarlar OS tarafından programatik olarak okunamaz. " +
+                            "İkonuna dokunarak ilgili ekrana git, manuel kontrol et.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                ManualCheckRow(
+                    label = "Autostart açık",
+                    onClick = { openMiuiAutostartSettings(context) },
+                )
+                ManualCheckRow(
+                    label = "Pil tasarrufu: Kısıtlama yok",
+                    onClick = { openAppDetails(context) },
+                )
+                ManualCheckRow(
+                    label = "Background activity: Sınırsız",
+                    onClick = { openAppDetails(context) },
+                )
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onOpenMiuiHelp,
+                ) { Text("MIUI Detaylı Yardım") }
+            }
+        }
+
         if (accessibilityEnabledInSettings && !runtimeConnected) {
             Text(
                 text =
                     if (runtimeUiState == AccessibilityRuntimeUiState.CONNECTING) {
-                        "Accessibility is enabled. Reconnecting… (MIUI may take a few seconds)."
+                        "Accessibility açık. Servis yeniden bağlanıyor… (MIUI'de birkaç saniye sürebilir)"
                     } else {
-                        "Disconnected by system (common on MIUI). Recording/playback will not start until runtime reconnects."
+                        "Sistem servisi kapattı (genelde MIUI). Pil optimizasyonu açıksa servis öldürülüyor; üstteki rozetten kapat."
                     },
                 style = MaterialTheme.typography.bodyMedium,
             )
-            if (snap.isMiui || snap.isXiaomiFamily) {
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = onOpenMiuiHelp,
-                ) { Text("Fix on MIUI") }
-            }
         }
         Text(
             text = "Last connected: ${lastConnectedAt ?: "never"}",
@@ -188,10 +253,6 @@ fun SettingsScreen(
         ) {
             Text("Diagnostics")
         }
-        ChecklistRow("Notifications allowed (Android 13+)", notificationsEnabled)
-        ChecklistRow("Exact alarms allowed (Android 12+)", canScheduleExactAlarms)
-        ChecklistRow("Battery optimization ignored (recommended)", ignoringBatteryOptimizations)
-        ChecklistRow("Overlay permission (optional)", canDrawOverlays)
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Stop recording with volume keys")
@@ -343,6 +404,103 @@ private fun ChecklistRow(label: String, ok: Boolean, customRightText: String? = 
     }
 }
 
+@Composable
+private fun PermissionStatusCard(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            content()
+        }
+    }
+}
+
+/**
+ * Tappable permission row.
+ * - Green ✓ when isOk == true
+ * - Red ✕ otherwise (or override badge text)
+ * - Tap opens the matching system settings page.
+ */
+@Composable
+private fun PermissionRow(
+    label: String,
+    isOk: Boolean,
+    badgeOverride: String? = null,
+    onClick: () -> Unit,
+) {
+    val okColor = Color(0xFF2E7D32)
+    val errColor = Color(0xFFC62828)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, modifier = Modifier.weight(1f))
+        Box(
+            modifier = Modifier
+                .background(
+                    color = if (isOk) okColor else errColor,
+                    shape = RoundedCornerShape(12.dp),
+                )
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+        ) {
+            Text(
+                text = badgeOverride ?: if (isOk) "Açık" else "Eksik",
+                color = Color.White,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+    }
+}
+
+/**
+ * Manual-check row for permissions the OS doesn't expose programmatically
+ * (MIUI Autostart, Background restriction, etc.). Shows a neutral "Kontrol et" badge
+ * and routes the user to the relevant settings page on tap.
+ */
+@Composable
+private fun ManualCheckRow(label: String, onClick: () -> Unit) {
+    val neutralColor = Color(0xFFB37800)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, modifier = Modifier.weight(1f))
+        Box(
+            modifier = Modifier
+                .background(color = neutralColor, shape = RoundedCornerShape(12.dp))
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+        ) {
+            Text(
+                text = "Kontrol et",
+                color = Color.White,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+    }
+}
+
 private fun openAccessibilitySettings(context: Context) {
     context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }
@@ -357,6 +515,67 @@ private fun openAppNotificationSettings(context: Context) {
 
 private fun openBatteryOptimizationSettings(context: Context) {
     context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+}
+
+private fun requestIgnoreBatteryOptimizations(context: Context) {
+    // Direct prompt — opens system dialog "Allow TimeMacro to ignore battery optimizations?"
+    // If the OEM blocks this intent (some MIUI builds), fall back to the list screen.
+    if (Build.VERSION.SDK_INT >= 23) {
+        val direct =
+            Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:${context.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        val resolved = runCatching { context.packageManager.resolveActivity(direct, 0) != null }.getOrDefault(false)
+        if (resolved) {
+            context.startActivity(direct)
+            return
+        }
+    }
+    openBatteryOptimizationSettings(context)
+}
+
+private fun openAppDetails(context: Context) {
+    val intent =
+        Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:${context.packageName}"),
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    context.startActivity(intent)
+}
+
+private fun openMiuiAutostartSettings(context: Context) {
+    // Best-effort: try known MIUI security center components, fall back to app details.
+    val candidates =
+        listOf(
+            Intent().setComponent(
+                android.content.ComponentName(
+                    "com.miui.securitycenter",
+                    "com.miui.permcenter.autostart.AutoStartManagementActivity",
+                ),
+            ),
+            Intent().setComponent(
+                android.content.ComponentName(
+                    "com.miui.securitycenter",
+                    "com.miui.permcenter.permissions.PermissionsEditorActivity",
+                ),
+            ).putExtra("extra_pkgname", context.packageName),
+            Intent().setComponent(
+                android.content.ComponentName(
+                    "com.miui.powerkeeper",
+                    "com.miui.powerkeeper.ui.HiddenAppsConfigActivity",
+                ),
+            ).putExtra("package_name", context.packageName).putExtra("package_label", "TimeMacro"),
+        )
+    val launched =
+        candidates.firstOrNull { i ->
+            runCatching { context.packageManager.resolveActivity(i, 0) != null }.getOrDefault(false)
+        }
+    if (launched != null) {
+        context.startActivity(launched.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } else {
+        openAppDetails(context)
+    }
 }
 
 private fun openOverlaySettings(context: Context) {

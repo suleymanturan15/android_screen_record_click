@@ -13,10 +13,11 @@ fun enabledAccessibilityServicesRaw(context: Context): String? {
 }
 
 fun isAccessibilityEnabledForThisService(context: Context): Boolean {
-    val enabledFlag =
-        Settings.Secure.getInt(context.contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) == 1
-    if (!enabledFlag) return false
-
+    // MIUI/HyperOS quirk: ACCESSIBILITY_ENABLED master flag can flip to 0 even when our
+    // service is still listed in ENABLED_ACCESSIBILITY_SERVICES and still binds normally.
+    // Previously we returned false on this transient state, which showed "Missing" on
+    // Settings/Permissions even though the service was active. Treat the per-service list
+    // as the source of truth and ignore the master flag.
     val enabledServices = enabledAccessibilityServicesRaw(context) ?: return false
 
     val cn = ComponentName(context, MacroAccessibilityService::class.java)
