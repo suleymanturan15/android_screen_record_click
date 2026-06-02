@@ -8,15 +8,40 @@ Detaylar için `docs/ANDROID_ARCHITECTURE.md` dosyasına bakın.
 
 ### İndir & Kur (telefon)
 
-Son sürüm debug APK: [`artifacts/timemacro-fix-tap-scheduler-debug.apk`](artifacts/timemacro-fix-tap-scheduler-debug.apk)
+**Önerilen** — daha küçük, optimized, sabit imza:  
+[`artifacts/timemacro-release.apk`](artifacts/timemacro-release.apk) (14 MB)
 
-Kurulum:
+Alternatif — debug build (loglar daha verbose):  
+[`artifacts/timemacro-fix-tap-scheduler-debug.apk`](artifacts/timemacro-fix-tap-scheduler-debug.apk) (21 MB)
+
+Her ikisi de **aynı stable keystore** ile imzalı → bir kez kurulduktan sonra güncelleme sırasında "package conflict" hatası vermez.
+
+**Kurulum adımları**:
 1. Telefonda Settings → Security → "Install unknown apps" → tarayıcına izin ver.
 2. APK'yı GitHub'dan indir (yukarıdaki link → "Download raw file") ve aç.
-3. Açıldıktan sonra in-app onboarding'i takip et:
-   - POST_NOTIFICATIONS izni (Android 13+) — runtime istenir.
-   - Settings → Accessibility → "TimeMacro Scheduler" → enable.
-   - (Önerilen) Ignore battery optimizations.
+3. **Play Protect uyarısı çıkarsa** (aşağıdaki "Play Protect bypass" bölümüne bak).
+4. Açıldıktan sonra in-app onboarding wizard'ı 4 kritik izni sırayla isteyecek:
+   - POST_NOTIFICATIONS (runtime prompt)
+   - Accessibility → TimeMacro Scheduler enable
+   - Ignore battery optimizations (MIUI için **ZORUNLU**)
+   - Exact alarms (Android 12+)
+
+### Play Protect uyarısı ("Uygulama, cihazınızı korumak için engellendi")
+
+Bu uyarı, accessibility servisi kullanan tüm sideload APK'lara çıkar — kodla "kapatılamaz", sistem-level Google heuristic. 3 çözüm yolu:
+
+**1) Play Protect tarayıcısını geçici kapat (En kolay)**
+1. Play Store → sağ üst profil ikonu → **Play Protect**
+2. Sağ üst **çark (⚙)** → **"Uygulamaları Play Protect ile tara"** kapat
+3. APK'yı tekrar kurmayı dene
+4. Kurulum bitince tarayıcıyı tekrar aç
+
+**2) Dosya yöneticisinden kur**
+- MIUI Dosya Yöneticisi → İndirilenler → APK'ya uzun bas → Yükle  
+- Bazen Chrome'dan kuruluma göre Play Protect'i atlar
+
+**3) GitHub Releases üzerinden indir**
+- Repo Releases sekmesinden indirilen APK bazen daha "trusted" olarak algılanır.
 
 ### Build / Run
 

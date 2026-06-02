@@ -18,13 +18,34 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("releaseStable") {
+            // Stable signing key committed to the repo. This is intentional for a personal-use,
+            // sideloaded distribution: it lets users update the APK in place without hitting
+            // "package conflicts with existing package" / signature errors, and matches the
+            // same SHA fingerprint across builds so Play Protect's reputation memory carries over.
+            // NOT a release-key in the commercial sense — do not reuse for any Play Store upload.
+            storeFile = rootProject.file("release.keystore")
+            storePassword = "timemacro-stable"
+            keyAlias = "timemacro"
+            keyPassword = "timemacro-stable"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("releaseStable")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+        }
+        debug {
+            // Debug variant also uses the stable key (instead of the auto-generated per-machine
+            // debug.keystore) so a debug APK built on any machine has the same signature.
+            // Eliminates "App not installed" signature mismatch when developers swap machines.
+            signingConfig = signingConfigs.getByName("releaseStable")
         }
     }
 

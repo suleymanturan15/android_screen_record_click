@@ -11,3 +11,5 @@ captures/
 *.idsig
 *.keystore
 *.jks
+# Exception: stable signing key for sideloaded distribution (see app/build.gradle.kts).
+!release.keystore
