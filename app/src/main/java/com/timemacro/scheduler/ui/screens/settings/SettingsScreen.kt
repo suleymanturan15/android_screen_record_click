@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -92,11 +94,12 @@ fun SettingsScreen(
     val tapJitterDp by container.userPreferences.tapJitterDp.collectAsState(initial = 0)
     val taskLaunchTargetApp by container.userPreferences.taskLaunchTargetApp.collectAsState(initial = false)
     val taskLaunchDelayMs by container.userPreferences.taskLaunchDelayMs.collectAsState(initial = 1500)
+    val tapAnimationDurationMs by container.userPreferences.tapAnimationDurationMs.collectAsState(initial = 200)
+    val showTapCoordinates by container.userPreferences.showTapCoordinates.collectAsState(initial = false)
 
     var tapOffsetXText by remember { mutableStateOf(tapOffsetXDp.toString()) }
     var tapOffsetYText by remember { mutableStateOf(tapOffsetYDp.toString()) }
     var tapJitterText by remember { mutableStateOf(tapJitterDp.toString()) }
-    var speedText by remember { mutableStateOf(playbackSpeedPercent.toString()) }
     var launchDelayText by remember { mutableStateOf(taskLaunchDelayMs.toString()) }
 
     LaunchedEffect(Unit) {
@@ -268,8 +271,13 @@ fun SettingsScreen(
             style = MaterialTheme.typography.bodySmall,
         )
 
+        // ─────────────────────────────────────────────────────────────────────
+        // Playback visualizer (live tap ring overlay)
+        // ─────────────────────────────────────────────────────────────────────
+        Text("Playback visualizer", style = MaterialTheme.typography.titleMedium)
+
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Show tap dot during playback")
+            Text("Tıklama noktalarını göster")
             Switch(
                 checked = showTapDotEnabled,
                 onCheckedChange = { enabled ->
@@ -277,26 +285,43 @@ fun SettingsScreen(
                 },
             )
         }
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Koordinatları göster (debug)")
+            Switch(
+                checked = showTapCoordinates,
+                onCheckedChange = { enabled ->
+                    scope.launch { container.userPreferences.setShowTapCoordinates(enabled) }
+                },
+            )
+        }
+
+        Text("Animasyon süresi", style = MaterialTheme.typography.bodyMedium)
+        ChipGroup(
+            options = listOf(50, 100, 200, 300),
+            selected = tapAnimationDurationMs,
+            labelFn = { "${it}ms" },
+            onSelect = { v -> scope.launch { container.userPreferences.setTapAnimationDurationMs(v) } },
+        )
         Text(
-            text = "Debug helper: shows where taps will occur (default ON).",
+            text = "Overlay ayrı thread'de çizilir, playback hızını etkilemez.",
             style = MaterialTheme.typography.bodySmall,
         )
 
-        Text("Playback tuning", style = MaterialTheme.typography.titleMedium)
-        OutlinedTextField(
-            modifier = Modifier.fillMaxWidth(),
-            value = speedText,
-            onValueChange = { speedText = it },
-            label = { Text("Speed percent (25..400) — 100=1.0x") },
-            singleLine = true,
+        // ─────────────────────────────────────────────────────────────────────
+        // Playback speed (preset chips)
+        // ─────────────────────────────────────────────────────────────────────
+        Text("Playback hız", style = MaterialTheme.typography.titleMedium)
+        ChipGroup(
+            options = listOf(25, 50, 75, 100, 125, 150, 200, 300, 500),
+            selected = playbackSpeedPercent,
+            labelFn = { pct -> "${(pct.toDouble() / 100.0).let { if (it == it.toInt().toDouble()) "${it.toInt()}" else "%.2f".format(it) }}x" },
+            onSelect = { v -> scope.launch { container.userPreferences.setPlaybackSpeedPercent(v) } },
         )
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                val v = speedText.trim().toIntOrNull() ?: 100
-                scope.launch { container.userPreferences.setPlaybackSpeedPercent(v) }
-            },
-        ) { Text("Apply speed") }
+        Text(
+            text = "Tüm Wait / inter-tap delay'ler bu katsayı ile hesaplanır. 100=1.0x (varsayılan).",
+            style = MaterialTheme.typography.bodySmall,
+        )
 
         Text("Tap calibration (only affects coordinate fallback taps)", style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(
@@ -401,6 +426,34 @@ private fun ChecklistRow(label: String, ok: Boolean, customRightText: String? = 
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label)
         Text(customRightText ?: if (ok) "OK" else "Missing")
+    }
+}
+
+/**
+ * Compact preset chip group. Wraps to next line when content exceeds row width.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun <T> ChipGroup(
+    options: List<T>,
+    selected: T,
+    labelFn: (T) -> String,
+    onSelect: (T) -> Unit,
+) {
+    androidx.compose.foundation.layout.FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        options.forEach { opt ->
+            val isSelected = opt == selected
+            FilterChip(
+                selected = isSelected,
+                onClick = { onSelect(opt) },
+                label = { Text(labelFn(opt)) },
+                colors = FilterChipDefaults.filterChipColors(),
+            )
+        }
     }
 }
 

@@ -52,7 +52,7 @@ class AccessibilityMacroRunner(
 
         val macro = kotlinx.coroutines.withContext(Dispatchers.IO) { macroRepository.getById(macroId) }
             ?: error("Macro not found")
-        val speedPercent = runCatching { userPreferences.playbackSpeedPercent.first() }.getOrDefault(100).coerceIn(25, 400)
+        val speedPercent = runCatching { userPreferences.playbackSpeedPercent.first() }.getOrDefault(100).coerceIn(25, 500)
         val speed = speedPercent.toDouble() / 100.0
         val recordedMs = macro.recordDurationMs.coerceAtLeast(0L)
         val expectedMs = (recordedMs.toDouble() / speed).toLong().coerceAtLeast(0L)

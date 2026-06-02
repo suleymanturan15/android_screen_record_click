@@ -3,13 +3,19 @@ package com.timemacro.scheduler.ui.screens.macros
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -321,10 +327,78 @@ fun MacroDetailScreen(
             Text("Delete Macro")
         }
 
+        // ─────────────────────────────────────────────────────────────────────
+        // Live Test Panel — visible while a TEST NOW / scheduled run is RUNNING.
+        // Shows step counter, last tap coords, mode, speed, elapsed time.
+        // Tick is local to this Composable; the playback state itself updates via
+        // MacroPlaybackStateHolder.tap()/progress() called from AccessibilityService.
+        // ─────────────────────────────────────────────────────────────────────
         if (playbackState.status != com.timemacro.scheduler.core.macro.MacroPlaybackState.Status.IDLE) {
-            Text("Playback: ${playbackState.status} • step ${playbackState.currentIndex}/${playbackState.totalActions}")
-            if (!playbackState.errorMessage.isNullOrBlank()) {
-                Text("Playback error: ${playbackState.errorMessage}")
+            val isRunning = playbackState.status == com.timemacro.scheduler.core.macro.MacroPlaybackState.Status.RUNNING
+            var nowTickMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+            LaunchedEffect(isRunning) {
+                while (isRunning) {
+                    kotlinx.coroutines.delay(250L)
+                    nowTickMs = System.currentTimeMillis()
+                }
+            }
+            val playbackSpeedPercent by container.userPreferences.playbackSpeedPercent.collectAsStateWithLifecycle(initialValue = 100)
+            val elapsedMs = playbackState.startedAtEpochMs?.let { (nowTickMs - it).coerceAtLeast(0L) } ?: 0L
+            val speedX = playbackSpeedPercent / 100.0
+            val totalSteps = playbackState.totalActions.coerceAtLeast(1)
+            val frac = (playbackState.currentIndex.toDouble() / totalSteps.toDouble()).coerceIn(0.0, 1.0)
+            val remainingMs = if (frac > 0.05) ((elapsedMs / frac) - elapsedMs).toLong().coerceAtLeast(0L) else 0L
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = "Canlı Test Paneli — ${playbackState.status}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Adım", fontWeight = FontWeight.Medium)
+                        Text("${playbackState.currentIndex} / ${playbackState.totalActions}")
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("X", fontWeight = FontWeight.Medium)
+                        Text(playbackState.lastTapX?.toString() ?: "—")
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Y", fontWeight = FontWeight.Medium)
+                        Text(playbackState.lastTapY?.toString() ?: "—")
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Mode", fontWeight = FontWeight.Medium)
+                        Text(playbackState.lastTapMode ?: "—")
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Hız", fontWeight = FontWeight.Medium)
+                        Text(
+                            if (speedX == speedX.toInt().toDouble()) "${speedX.toInt()}x"
+                            else "%.2fx".format(speedX),
+                        )
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Geçen süre", fontWeight = FontWeight.Medium)
+                        Text(formatElapsed(elapsedMs))
+                    }
+                    if (isRunning && remainingMs > 0L) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Kalan (tahmini)", fontWeight = FontWeight.Medium)
+                            Text(formatElapsed(remainingMs))
+                        }
+                    }
+                    if (!playbackState.errorMessage.isNullOrBlank()) {
+                        Text("Hata: ${playbackState.errorMessage}", color = MaterialTheme.colorScheme.error)
+                    }
+                }
             }
         }
 
@@ -332,6 +406,13 @@ fun MacroDetailScreen(
             Text("Status: $playbackStatus")
         }
     }
+}
+
+private fun formatElapsed(ms: Long): String {
+    val totalSec = (ms / 1000L).coerceAtLeast(0L)
+    val mm = totalSec / 60L
+    val ss = totalSec % 60L
+    return "%02d:%02d".format(mm, ss)
 }
 
 private fun Context.findActivity(): Activity? {

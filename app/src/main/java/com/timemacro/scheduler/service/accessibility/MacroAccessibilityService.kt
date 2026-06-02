@@ -79,6 +79,12 @@ class MacroAccessibilityService : AccessibilityService() {
     @Volatile
     private var showTapDotDuringPlayback: Boolean = true
 
+    @Volatile
+    private var tapAnimationDurationMs: Int = 200
+
+    @Volatile
+    private var showTapCoordinates: Boolean = false
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private var tapDotView: View? = null
     private var playbackOverlayWidget: OverlayStopWidget? = null
@@ -344,6 +350,12 @@ class MacroAccessibilityService : AccessibilityService() {
             }
             scope.launch {
                 prefs.tapJitterDp.collect { v -> tapJitterDp = v.coerceIn(0, 30) }
+            }
+            scope.launch {
+                prefs.tapAnimationDurationMs.collect { v -> tapAnimationDurationMs = v.coerceIn(50, 300) }
+            }
+            scope.launch {
+                prefs.showTapCoordinates.collect { v -> showTapCoordinates = v }
             }
             Log.d(TAG_ACC, "onServiceConnected end")
         } catch (t: Throwable) {
@@ -704,6 +716,8 @@ class MacroAccessibilityService : AccessibilityService() {
                                     TAG_PLAYBACK,
                                     "TAP idx=${idx + 1}/${actions.size} mode=${resolved.mode} x=$x y=$y",
                                 )
+                                // Live state: expose recorded coords + mode to MacroDetailScreen.
+                                MacroPlaybackStateHolder.tap(x = x, y = y, mode = resolved.mode)
                                 dispatchTap(x, y)
                             }
                             executed++
@@ -763,10 +777,10 @@ class MacroAccessibilityService : AccessibilityService() {
             }
         val ax = (x + oxPx + jx).coerceIn(0, curW - 1)
         val ay = (y + oyPx + jy).coerceIn(0, curH - 1)
-        // A4 fix: tap dot is a visual debug-only highlight. Fire-and-forget on main thread, NO delay.
+        // A4 fix: tap ring is a visual debug-only highlight. Fire-and-forget on main thread, NO delay.
         // The 250ms pre-gesture delay used to accumulate (e.g. 10 taps → +2.5s playback drift).
         if (showTapDotDuringPlayback) {
-            showTapDot(ax, ay, durationMs = 250)
+            showTapRing(ax, ay, tapAnimationDurationMs.toLong(), if (showTapCoordinates) "$ax,$ay" else null)
         }
         val path = Path().apply {
             moveTo(ax.toFloat(), ay.toFloat())
@@ -834,9 +848,13 @@ class MacroAccessibilityService : AccessibilityService() {
             val y = rect.centerY().coerceIn(0, curH - 1)
             Log.d(TAG_PLAYBACK, "TAP selector viewId=${selector.viewId} text=${selector.text} cls=${selector.cls} expected=${expected.first},${expected.second}")
 
-            // A4 fix: visual-only dot, no blocking delay before the node click.
+            // A4 fix: visual-only ring, no blocking delay before the node click.
+            // Mode label here is "NODE_CLICK" — the A3 nearest-clickable path was promoted by
+            // findBestNodeForSelector, so by the time we get here it's a successful node click.
+            // Live state: surface to MacroDetailScreen.
+            MacroPlaybackStateHolder.tap(x = x, y = y, mode = "NODE_CLICK")
             if (showTapDotDuringPlayback) {
-                showTapDot(x, y, durationMs = 250)
+                showTapRing(x, y, tapAnimationDurationMs.toLong(), if (showTapCoordinates) "$x,$y" else null)
             }
 
             val clicked = clickNodeOrParent(node)
@@ -1398,6 +1416,63 @@ class MacroAccessibilityService : AccessibilityService() {
         return Triple(p.x, p.y, rotation)
     }
 
+    /**
+     * Fire-and-forget animated red ring around (x,y). Pure View+Canvas; no ValueAnimator,
+     * no extra threads — uses postInvalidateOnAnimation tied to vsync. Removes itself
+     * after the animation completes (durationMs + 50 ms grace).
+     *
+     * Strict constraint (per UX spec): MUST NOT slow down playback. The overlay window
+     * is added on main thread, but it is NOT awaited and adds no synchronous delay to
+     * the gesture coroutine.
+     */
+    private fun showTapRing(x: Int, y: Int, durationMs: Long, coordLabel: String?) {
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val density = resources.displayMetrics.density
+        val maxRadiusPx = (density * 38f).toInt() // ~38dp ring max radius
+        val sizePx = (maxRadiusPx + density * 18f).toInt() * 2 // include stroke + label headroom
+
+        mainHandler.post {
+            // Replace previous dot/ring (single overlay at a time).
+            tapDotView?.let { old ->
+                runCatching { wm.removeView(old) }
+                tapDotView = null
+            }
+
+            val ring =
+                TapRingView(
+                    context = this,
+                    maxRadiusPx = maxRadiusPx.toFloat(),
+                    durationMs = durationMs,
+                    coordLabel = coordLabel,
+                )
+            val lp =
+                WindowManager.LayoutParams(
+                    sizePx,
+                    sizePx,
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                    PixelFormat.TRANSLUCENT,
+                ).apply {
+                    gravity = Gravity.TOP or Gravity.START
+                    this.x = (x - sizePx / 2).coerceAtLeast(0)
+                    this.y = (y - sizePx / 2).coerceAtLeast(0)
+                }
+
+            runCatching { wm.addView(ring, lp) }
+            tapDotView = ring
+
+            mainHandler.postDelayed({
+                val cur = tapDotView
+                if (cur === ring) {
+                    runCatching { wm.removeView(ring) }
+                    tapDotView = null
+                } else {
+                    runCatching { wm.removeView(ring) }
+                }
+            }, durationMs + 50L)
+        }
+    }
+
     private fun showTapDot(x: Int, y: Int, durationMs: Long) {
         // TYPE_ACCESSIBILITY_OVERLAY does not require overlay permission.
         val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -1490,6 +1565,54 @@ class MacroAccessibilityService : AccessibilityService() {
     private fun showToast(msg: String) {
         mainHandler.post {
             android.widget.Toast.makeText(applicationContext, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /**
+     * Lightweight animated ring view. Pure Canvas + postInvalidateOnAnimation, no AnimatorSet.
+     * Self-removes after durationMs; never touches the gesture pipeline.
+     */
+    private class TapRingView(
+        context: Context,
+        private val maxRadiusPx: Float,
+        private val durationMs: Long,
+        private val coordLabel: String?,
+    ) : View(context) {
+        private val ringPaint =
+            android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = context.resources.displayMetrics.density * 3f
+                color = 0xFFE53935.toInt() // material red 600
+            }
+        private val coreDotPaint =
+            android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                style = android.graphics.Paint.Style.FILL
+                color = 0xCCE53935.toInt()
+            }
+        private val textPaint =
+            android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color = 0xFFFFFFFF.toInt()
+                textSize = context.resources.displayMetrics.density * 11f
+                setShadowLayer(3f, 1f, 1f, 0xCC000000.toInt())
+            }
+        private val startMs = SystemClock.uptimeMillis()
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            val now = SystemClock.uptimeMillis()
+            val t = ((now - startMs).toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+            val cx = width / 2f
+            val cy = height / 2f
+            // Always-visible core dot so the user sees the exact target point.
+            canvas.drawCircle(cx, cy, context.resources.displayMetrics.density * 3f, coreDotPaint)
+            // Expanding fading ring.
+            val r = maxRadiusPx * (0.25f + 0.75f * t)
+            ringPaint.alpha = (255 * (1f - t)).toInt().coerceIn(0, 255)
+            canvas.drawCircle(cx, cy, r, ringPaint)
+            // Optional coord label above the ring.
+            if (coordLabel != null) {
+                canvas.drawText(coordLabel, cx - textPaint.measureText(coordLabel) / 2f, cy - maxRadiusPx - 6f, textPaint)
+            }
+            if (t < 1f) postInvalidateOnAnimation()
         }
     }
 }

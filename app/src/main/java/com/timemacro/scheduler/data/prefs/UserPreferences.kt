@@ -29,6 +29,8 @@ class UserPreferences(
         val TapJitterDp = intPreferencesKey("tap_jitter_dp")
         val TaskLaunchTargetApp = booleanPreferencesKey("task_launch_target_app")
         val TaskLaunchDelayMs = intPreferencesKey("task_launch_delay_ms")
+        val TapAnimationDurationMs = intPreferencesKey("tap_animation_duration_ms")
+        val ShowTapCoordinates = booleanPreferencesKey("show_tap_coordinates")
     }
 
     /**
@@ -65,12 +67,29 @@ class UserPreferences(
             .map { prefs -> prefs[Keys.MaxScrollSettleWaitMs] ?: 1200 }
 
     /**
-     * Playback speed (percent). 100 = 1.0x.
+     * Playback speed (percent). 100 = 1.0x. Range 25..500 (0.25x..5x preset chips in Settings).
      */
     val playbackSpeedPercent: Flow<Int> =
         context.dataStore.data
             .catch { emit(emptyPreferences()) }
-            .map { prefs -> (prefs[Keys.PlaybackSpeedPercent] ?: 100).coerceIn(25, 400) }
+            .map { prefs -> (prefs[Keys.PlaybackSpeedPercent] ?: 100).coerceIn(25, 500) }
+
+    /**
+     * Tap ring animation duration during playback. Preset values: 50/100/200/300 ms.
+     * Independent of playback timing — overlay is fire-and-forget.
+     */
+    val tapAnimationDurationMs: Flow<Int> =
+        context.dataStore.data
+            .catch { emit(emptyPreferences()) }
+            .map { prefs -> (prefs[Keys.TapAnimationDurationMs] ?: 200).coerceIn(50, 300) }
+
+    /**
+     * Show X,Y label next to the playback tap ring (debug helper, default off).
+     */
+    val showTapCoordinates: Flow<Boolean> =
+        context.dataStore.data
+            .catch { emit(emptyPreferences()) }
+            .map { prefs -> prefs[Keys.ShowTapCoordinates] ?: false }
 
     /**
      * Tap calibration (dp offsets and optional jitter radius).
@@ -141,7 +160,19 @@ class UserPreferences(
 
     suspend fun setPlaybackSpeedPercent(value: Int) {
         context.dataStore.edit { prefs ->
-            prefs[Keys.PlaybackSpeedPercent] = value.coerceIn(25, 400)
+            prefs[Keys.PlaybackSpeedPercent] = value.coerceIn(25, 500)
+        }
+    }
+
+    suspend fun setTapAnimationDurationMs(value: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.TapAnimationDurationMs] = value.coerceIn(50, 300)
+        }
+    }
+
+    suspend fun setShowTapCoordinates(value: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.ShowTapCoordinates] = value
         }
     }
 
