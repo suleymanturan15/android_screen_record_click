@@ -10,25 +10,30 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.timemacro.scheduler"
+        // applicationId intentionally distinct from `namespace` so the on-device package
+        // identity is "fresh" against Play Protect's reputation memory while the Kotlin
+        // package layout stays unchanged. Namespace controls R / BuildConfig + manifest
+        // resolution; applicationId is what the OS / Play Protect see.
+        applicationId = "io.suleymanturan.timemacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.0-hotfix1"
+        versionCode = 3
+        versionName = "0.2.0-fresh"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
         create("releaseStable") {
-            // Stable signing key committed to the repo. This is intentional for a personal-use,
-            // sideloaded distribution: it lets users update the APK in place without hitting
-            // "package conflicts with existing package" / signature errors, and matches the
-            // same SHA fingerprint across builds so Play Protect's reputation memory carries over.
-            // NOT a release-key in the commercial sense — do not reuse for any Play Store upload.
-            storeFile = rootProject.file("release.keystore")
-            storePassword = "timemacro-stable"
-            keyAlias = "timemacro"
-            keyPassword = "timemacro-stable"
+            // Fresh keystore (release-fresh.keystore). Different SHA fingerprint than the
+            // previous release.keystore so Play Protect's signature reputation database has
+            // no entry for this APK. Combined with the new applicationId above, this should
+            // bypass the "Uygulama engellendi" dialog on Xiaomi/HyperOS sideloads — or at
+            // least give the user a one-time-dismissable warning instead of a hard block.
+            // NOT for any Play Store upload.
+            storeFile = rootProject.file("release-fresh.keystore")
+            storePassword = "fresh-stable"
+            keyAlias = "fresh"
+            keyPassword = "fresh-stable"
         }
     }
 
