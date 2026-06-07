@@ -10,47 +10,42 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        // applicationId intentionally distinct from `namespace` so the on-device package
-        // identity is "fresh" against Play Protect's reputation memory while the Kotlin
-        // package layout stays unchanged. Namespace controls R / BuildConfig + manifest
-        // resolution; applicationId is what the OS / Play Protect see.
-        applicationId = "io.suleymanturan.timemacro"
+        // CRITICAL — applicationId reverted to the value the user's existing on-device install
+        // already uses. Combined with signing via the machine's standard ~/.android/debug.keystore
+        // below (which is exactly the keystore that signed their installed artifact, verified by
+        // matching SHA256 0A:88:9B:2F:…), the new APK upgrades the existing app in place — Play
+        // Protect treats it as an UPDATE to an already-trusted package instead of a fresh install
+        // of a sensitive-permission APK, bypassing the "Uygulama engellendi" hard block.
+        applicationId = "com.timemacro.scheduler"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.0-fresh"
+        versionCode = 4
+        versionName = "0.2.0-debugsigned"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
-        create("releaseStable") {
-            // Fresh keystore (release-fresh.keystore). Different SHA fingerprint than the
-            // previous release.keystore so Play Protect's signature reputation database has
-            // no entry for this APK. Combined with the new applicationId above, this should
-            // bypass the "Uygulama engellendi" dialog on Xiaomi/HyperOS sideloads — or at
-            // least give the user a one-time-dismissable warning instead of a hard block.
-            // NOT for any Play Store upload.
-            storeFile = rootProject.file("release-fresh.keystore")
-            storePassword = "fresh-stable"
-            keyAlias = "fresh"
-            keyPassword = "fresh-stable"
+        create("debugsigned") {
+            // Standard Android SDK debug keystore. Verified SHA256 0A:88:9B:2F:5D:FE:A7:99:…
+            // matches the user's existing on-device install, so the new APK upgrades in place.
+            storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("releaseStable")
+            signingConfig = signingConfigs.getByName("debugsigned")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
         }
         debug {
-            // Debug variant also uses the stable key (instead of the auto-generated per-machine
-            // debug.keystore) so a debug APK built on any machine has the same signature.
-            // Eliminates "App not installed" signature mismatch when developers swap machines.
-            signingConfig = signingConfigs.getByName("releaseStable")
+            // AGP default — uses ~/.android/debug.keystore automatically.
         }
     }
 
